@@ -1,0 +1,19 @@
+risk_assessments/
+    8d2c...
+        assessment_id: "8d2c..."
+        patient_id: "abc123"
+        risk_level: "High Risk"
+        risk_score: 6
+
+        reasons:
+            - "Severe bleeding reported"
+            - "Severe headache"
+
+        recommendation:
+            "Refer immediately."
+
+        assessed_by:
+            "firebase-user-id"
+
+        assessed_at:
+            "2026-08-09T..."
