@@ -4,7 +4,6 @@ from fastapi import Depends
 from core.auth import get_current_user
 from schemas.mother import MotherCreate
 from schemas.child import ChildCreate
-from schemas.risk import RiskAssessmentRequest
 
 from services.patient_service import (
     register_mother,
@@ -28,10 +27,7 @@ async def create_mother(
 
 
 @router.post("/children")
-async def create_child(
-    child: ChildCreate,
-    current_user: dict = Depends(get_current_user),
-):
+async def create_child(child: ChildCreate,current_user: dict = Depends(get_current_user),):
     return register_child(child, created_by=current_user["uid"])
 
 @router.get("/")
@@ -41,11 +37,3 @@ async def get_patients():
 @router.get("/{patient_id}")
 async def get_patient_by_id(patient_id: str):
     return get_patient(patient_id)
-
-@router.post("/assess-risk")
-async def assess_patient_risk(
-    request: RiskAssessmentRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    # TODO: Implement risk assessment logic
-    return {"message": "Risk assessment endpoint - implementation pending"}

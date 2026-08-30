@@ -43,7 +43,7 @@ async def create_new_referral(
         message = referral_created_message(
             referral.destination
         )
-        send_sms(phone_number, message)
+        await send_sms(phone_number, message)
     
     return result
 
