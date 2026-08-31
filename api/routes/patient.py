@@ -31,9 +31,9 @@ async def create_child(child: ChildCreate,current_user: dict = Depends(get_curre
     return register_child(child, created_by=current_user["uid"])
 
 @router.get("/")
-async def get_patients():
+async def get_patients(current_user: dict = Depends(get_current_user)):
     return get_all_patients()
 
 @router.get("/{patient_id}")
-async def get_patient_by_id(patient_id: str):
+async def get_patient_by_id(patient_id: str, current_user: dict = Depends(get_current_user)):
     return get_patient(patient_id)
