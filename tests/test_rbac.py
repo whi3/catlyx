@@ -43,6 +43,9 @@ class FakeSnapshot:
         if self._data is None:
             return default
         return self._data.get(key, default)
+
+
+class FakeDocument:
     def __init__(self, collection, document_id):
         self.collection = collection
         self.document_id = document_id
