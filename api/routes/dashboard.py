@@ -4,7 +4,7 @@ from services.dashboard_service import DashboardService
 from schemas.dashboard import DashboardMetrics, TrendResponse
 
 dashboard_router = APIRouter(
-    prefix="/dashboard",
+    prefix="/api/v1/dashboard",
     tags=["dashboard"]
 )
 

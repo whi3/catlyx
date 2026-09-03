@@ -166,6 +166,10 @@ class DashboardService:
     @staticmethod
     def determine_system_health(metrics: dict) -> str:
         """Determining system health based on metrics."""
+        # If no data, consider system HEALTHY
+        if metrics["referral_metrics"].total_referrals == 0:
+            return "HEALTHY"
+        
         # CRITICAL: >5% overdue followups or <50% referral completion
         if metrics["followup_metrics"].overdue_followups > 5:
             return "CRITICAL"
@@ -180,9 +184,11 @@ class DashboardService:
 
         return "HEALTHY"
 
+    @staticmethod
     def get_dashboard_metrics() -> DashboardMetrics:
-        patient_metrics = DashboardMetrics.get_patient_metrics()
-        risk_distribution = DashboardMetrics.get_risk_distribution()
+        """Get all dashboard metrics."""
+        patient_metrics = DashboardService.get_patient_metrics()
+        risk_distribution = DashboardService.get_risk_distribution()
         referral_metrics = DashboardService.get_referral_metrics()
         followup_metrics = DashboardService.get_followup_metrics()
 
@@ -198,7 +204,7 @@ class DashboardService:
         return DashboardMetrics(
             timestamp=datetime.now(timezone.utc),
             patient_metrics=patient_metrics,
-            risk_distribution=referral_metrics,
+            risk_distribution=risk_distribution,
             referral_metrics=referral_metrics,
             followup_metrics=followup_metrics,
             system_health=system_health
@@ -278,5 +284,5 @@ class DashboardService:
     
         return TrendResponse(
             data_points=data_points,
-            data_range=f"last_{days}_days"
+            date_range=f"last_{days}_days"
         )
