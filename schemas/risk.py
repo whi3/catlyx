@@ -28,6 +28,18 @@ class RiskAssessmentRequest(BaseModel):
     swelling: bool = False
     fever: bool = False
     missed_follow_up: bool = False
+    blurred_vision: bool = False
+    severe_abdominal_pain: bool = False
+    difficulty_breathing: bool = False
+    reduced_fetal_movement: bool = False
+    missed_anc: bool = False
+    severe_diarrhoea: bool = False
+    persistent_vomiting: bool = False
+    feeding_difficulty: bool = False
+    lethargy: bool = False
+    convulsions: bool = False
+    severe_wasting: bool = False
+    missed_immunization: bool = False
 
 class RiskAssessmentResponse(BaseModel):
     assessment_id: Optional[str] = None

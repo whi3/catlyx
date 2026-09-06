@@ -144,7 +144,11 @@ class DashboardService:
 
                 if scheduled_date_str:
                     try:
-                        scheduled = datetime .fromisoformat(scheduled_date_str)
+                        scheduled = datetime.fromisoformat(
+                            scheduled_date_str.replace("Z", "+00:00")
+                        )
+                        if scheduled.tzinfo is None:
+                            scheduled = scheduled.replace(tzinfo=timezone.utc)
                         if scheduled < now:
                             overdue += 1
                     except:
@@ -221,20 +225,20 @@ class DashboardService:
             day_end = day_start + timedelta(days=1)
 
             high_risk_count = 0
-            assessments = db.collection("risk_assessments").stream()
+            assessments = list(db.collection("risk_assessments").stream())
             for doc in assessments:
                 data = doc.to_dict()
-                created_str = data.get("created_at")
+                created_str = data.get("assessed_at") or data.get("created_at")
                 if created_str:
                     try:
                         created = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                        if day_start <= created < day_end and data.get("risk_level") == "HIGH RISK":
+                        if day_start <= created < day_end and data.get("risk_level", "").lower() == "high risk":
                             high_risk_count += 1
                     except:
                         pass
 
             new_referrals = 0
-            referrals = db.collection("referrals").stream()
+            referrals = list(db.collection("referrals").stream())
             for doc in referrals:
                 data = doc.to_dict()
                 created_str = data.get("created_at")
@@ -252,7 +256,7 @@ class DashboardService:
                 completed_str = data.get("completed_at")
                 if completed_str:
                     try:
-                        completed_str = datetime .fromisoformat(completed_str .replace('Z', '+00:00'))
+                        completed = datetime.fromisoformat(completed_str.replace('Z', '+00:00'))
                         if day_start <= completed < day_end:
                             completed_referrals += 1
                     except:
@@ -266,7 +270,9 @@ class DashboardService:
                 scheduled_str = data.get("scheduled_date")
                 if status == "pending" and scheduled_str:
                     try:
-                        scheduled = datetime.fromisoformat(scheduled_str)
+                        scheduled = datetime.fromisoformat(scheduled_str.replace("Z", "+00:00"))
+                        if scheduled.tzinfo is None:
+                            scheduled = scheduled.replace(tzinfo=timezone.utc)
                         if scheduled < day_start:
                             overdue_followups += 1
                     except:
@@ -284,5 +290,6 @@ class DashboardService:
     
         return TrendResponse(
             data_points=data_points,
-            date_range=f"last_{days}_days"
+            data_range=f"last_{days}_days",
+            date_range=f"last_{days}_days",
         )

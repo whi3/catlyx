@@ -48,3 +48,4 @@ class TrendDataPoint(BaseModel):
 class TrendResponse(BaseModel):
     data_points: list[TrendDataPoint]
     data_range: str
+    date_range: Optional[str] = None

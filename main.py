@@ -1,6 +1,4 @@
 from fastapi import FastAPI
-# Initializing Firebase
-import core.firebase
 from config import settings
 from api.router import api_router
 
