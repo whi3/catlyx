@@ -10,6 +10,14 @@ class DashboardService:
     """Metrics calculation and aggregation"""
 
     @staticmethod
+    def _parse_datetime(value: str) -> datetime:
+        """Parse an ISO timestamp and normalize it to UTC."""
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    @staticmethod
     def get_patient_metrics():
         """Calculating patient registration metrics"""
         patients = db.collection("patients").stream()
@@ -35,7 +43,7 @@ class DashboardService:
 
             if created_at_str:
                 try:
-                    created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                    created_at = DashboardService._parse_datetime(created_at_str)
                     if created_at >= today_start:
                         new_today += 1
                     if created_at >= week_ago:
@@ -103,8 +111,8 @@ class DashboardService:
 
             if created_str and completed_str:
                 try:
-                    created = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                    completed_dt = datetime.fromisoformat(completed_str.replace('Z', '+00:00'))
+                    created = DashboardService._parse_datetime(created_str)
+                    completed_dt = DashboardService._parse_datetime(completed_str)
                     hours = (completed_dt - created).total_seconds() / 3600
                     total_hours += hours
                 except:
@@ -144,7 +152,7 @@ class DashboardService:
 
                 if scheduled_date_str:
                     try:
-                        scheduled = datetime .fromisoformat(scheduled_date_str)
+                        scheduled = DashboardService._parse_datetime(scheduled_date_str)
                         if scheduled < now:
                             overdue += 1
                     except:
@@ -227,20 +235,23 @@ class DashboardService:
                 created_str = data.get("created_at")
                 if created_str:
                     try:
-                        created = datetime.fromisoformat(created_str.replace('Z', '+00:00'))
-                        if day_start <= created < day_end and data.get("risk_level") == "HIGH RISK":
+                        created = DashboardService._parse_datetime(created_str)
+                        if (
+                            day_start <= created < day_end
+                            and data.get("risk_level", "").lower() == "high risk"
+                        ):
                             high_risk_count += 1
                     except:
                         pass
 
             new_referrals = 0
-            referrals = db.collection("referrals").stream()
+            referrals = list(db.collection("referrals").stream())
             for doc in referrals:
                 data = doc.to_dict()
                 created_str = data.get("created_at")
                 if created_str:
                     try:
-                        created = datetime.fromisoformat(created_str .replace('Z', '+00:00'))
+                        created = DashboardService._parse_datetime(created_str)
                         if day_start <= created < day_end:
                             new_referrals += 1
                     except:
@@ -252,7 +263,7 @@ class DashboardService:
                 completed_str = data.get("completed_at")
                 if completed_str:
                     try:
-                        completed_str = datetime .fromisoformat(completed_str .replace('Z', '+00:00'))
+                        completed = DashboardService._parse_datetime(completed_str)
                         if day_start <= completed < day_end:
                             completed_referrals += 1
                     except:
@@ -266,7 +277,7 @@ class DashboardService:
                 scheduled_str = data.get("scheduled_date")
                 if status == "pending" and scheduled_str:
                     try:
-                        scheduled = datetime.fromisoformat(scheduled_str)
+                        scheduled = DashboardService._parse_datetime(scheduled_str)
                         if scheduled < day_start:
                             overdue_followups += 1
                     except:

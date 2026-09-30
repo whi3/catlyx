@@ -230,35 +230,46 @@ def test_dashboard_followup_metrics(fake_db, client, mock_auth):
 
 
 def test_dashboard_trends(fake_db, client, mock_auth):
-    """Test trend data endpoint."""
-    now = datetime.now(timezone.utc)
-    
+    """Trend data includes counts for the matching historical day."""
+    target = datetime.now(timezone.utc) - timedelta(days=1)
+    target_date = target.date().isoformat()
+    overdue_date = (target - timedelta(days=1)).date().isoformat()
+
     fake_db.collection("patients").docs = {}
     fake_db.collection("risk_assessments").docs = {
         "r1": {
             "risk_level": "High Risk",
-            "created_at": now.isoformat()
+            "created_at": target.isoformat(),
         }
     }
     fake_db.collection("referrals").docs = {
         "ref1": {
-            "created_at": now.isoformat(),
-            "completed_at": None
+            "created_at": target.isoformat(),
+            "completed_at": target.isoformat(),
         }
     }
-    fake_db.collection("followups").docs = {}
-    
-    response = client.get("/api/v1/dashboard/trends?days=7")
-    
+    fake_db.collection("followups").docs = {
+        "fu1": {
+            "status": "pending",
+            "scheduled_date": overdue_date,
+        }
+    }
+
+    response = client.get("/api/v1/dashboard/trends?days=2")
+
     assert response.status_code == 200
     data = response.json()
-    print(f"Trends response keys: {data.keys()}")
-    print(f"Trends response: {data}")
-    
-    assert "data_points" in data
-    assert data.get("date_range") == "last_7_days" or "date_range" in data
-    assert len(data["data_points"]) == 7
+    assert data["date_range"] == "last_2_days"
 
+    target_point = next(
+        point for point in data["data_points"]
+        if point["date"] == target_date
+    )
+
+    assert target_point["high_risk_count"] == 1
+    assert target_point["new_referrals"] == 1
+    assert target_point["completed_referrals"] == 1
+    assert target_point["overdue_followups"] == 1
 
 def test_dashboard_system_health_critical(fake_db, client, mock_auth):
     """Test system health determination (CRITICAL)."""
