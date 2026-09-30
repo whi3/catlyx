@@ -79,9 +79,14 @@ def create_risk_assessment(
 
     elif patient_type == "child":
         try:
+            child_data = dict(data)
+            child_data["age_months"] = child_data.get(
+                "child_age_months",
+                patient.get("age_months"),
+            )
             assessment_data = (
                 ChildRiskAssessmentRequest(
-                    **data
+                    **child_data
                 )
             )
 
@@ -135,3 +140,23 @@ def create_risk_assessment(
     return RiskAssessmentResponse(
         **assessment_record
     )
+
+
+def get_assessment_history(patient_id: str) -> list[dict]:
+    assessments = []
+    for document in db.collection(COLLECTION).stream():
+        data = document.to_dict()
+        if data.get("patient_id") == patient_id:
+            assessments.append(data)
+    return sorted(
+        assessments,
+        key=lambda item: item.get("assessed_at", ""),
+        reverse=True,
+    )
+
+
+def get_current_risk(patient_id: str) -> dict:
+    history = get_assessment_history(patient_id)
+    if not history:
+        raise HTTPException(status_code=404, detail="No risk assessment found.")
+    return history[0]

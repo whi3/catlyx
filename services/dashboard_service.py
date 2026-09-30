@@ -229,10 +229,10 @@ class DashboardService:
             day_end = day_start + timedelta(days=1)
 
             high_risk_count = 0
-            assessments = db.collection("risk_assessments").stream()
+            assessments = list(db.collection("risk_assessments").stream())
             for doc in assessments:
                 data = doc.to_dict()
-                created_str = data.get("created_at")
+                created_str = data.get("assessed_at") or data.get("created_at")
                 if created_str:
                     try:
                         created = DashboardService._parse_datetime(created_str)

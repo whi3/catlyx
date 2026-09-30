@@ -88,19 +88,16 @@ def update_referral_status(
             detail="Referral not found."
         )
 
-    allowed_statuses = {
-        "pending",
-        "completed",
-        "cancelled",
+    transitions = {
+        "pending": {"completed", "cancelled"},
+        "completed": set(),
+        "cancelled": set(),
     }
-
-    if update.status not in allowed_statuses:
+    current_status = document.to_dict().get("status", "pending")
+    if update.status not in transitions.get(current_status, set()):
         raise HTTPException(
             status_code=400,
-            detail=(
-                "Invalid referral status. "
-                "Use pending, completed, or cancelled."
-            )
+            detail=f"Invalid status transition from {current_status} to {update.status}.",
         )
 
     data = {
@@ -110,6 +107,8 @@ def update_referral_status(
         ).isoformat(),
         "updated_by": updated_by,
     }
+    if update.status == "completed":
+        data["completed_at"] = data["updated_at"]
 
     (
         db.collection(COLLECTION)

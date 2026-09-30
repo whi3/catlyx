@@ -49,7 +49,10 @@ async def create_new_referral(
 
 
 @router.get("/{referral_id}", response_model=dict)
-async def get_referral_by_id(referral_id: str):
+async def get_referral_by_id(
+    referral_id: str,
+    current_user: dict = Depends(get_current_user),
+):
     return get_referral(referral_id)
 
 

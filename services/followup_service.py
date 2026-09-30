@@ -21,6 +21,13 @@ def schedule_followup(followup: FollowUpCreate, created_by: str):
     if not referral.exists:
         raise HTTPException(status_code=404, detail="Referral not found")
 
+    referral_data = referral.to_dict()
+    if referral_data.get("patient_id") != followup.patient_id:
+        raise HTTPException(
+            status_code=422,
+            detail="Follow-up patient does not match the referral patient.",
+        )
+
     followup_id = str(uuid.uuid4())
     created_at = datetime.now(timezone.utc)
 
@@ -58,8 +65,10 @@ def get_overdue_followups():
 
     for followup in followups:
         scheduled_date = datetime.fromisoformat(
-            followup["scheduled_date"]
+            followup["scheduled_date"].replace("Z", "+00:00")
         )
+        if scheduled_date.tzinfo is None:
+            scheduled_date = scheduled_date.replace(tzinfo=timezone.utc)
 
         if scheduled_date < now:
             overdue.append(followup)
