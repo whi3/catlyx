@@ -3,6 +3,7 @@ from fastapi import Depends, APIRouter, Query, Request
 from core.auth import require_role
 from schemas.role import UserRole, RoleCreate
 from services.role_service import assign_role, get_audit_logs
+from services.notification_service import retry_due_notifications
 
 router=APIRouter(
     prefix="/api/v1/admin",
@@ -43,3 +44,12 @@ async def view_audit_logs(
         facility_id=current_user.get("facility_id"),
         is_admin=current_user.get("role") == UserRole.ADMIN.value,
     )
+
+
+@router.post("/notifications/retry", response_model=dict)
+async def retry_notifications(
+    limit: int = Query(default=50, ge=1, le=100),
+    current_user: dict = Depends(require_role([UserRole.ADMIN])),
+):
+    """Run one bounded pass over due notification outbox entries."""
+    return await retry_due_notifications(limit=limit)

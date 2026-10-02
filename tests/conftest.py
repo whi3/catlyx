@@ -57,5 +57,9 @@ class _Database:
 def isolate_audit_database(monkeypatch):
     """Keep the HTTP audit middleware away from any configured Firebase project."""
     from services import role_service
+    from config import settings
 
     monkeypatch.setattr(role_service, "db", _Database())
+    # Existing endpoint tests exercise the engine; a dedicated test verifies
+    # the fail-closed default separately.
+    monkeypatch.setattr(settings, "RISK_RULES_CLINICALLY_APPROVED", True)

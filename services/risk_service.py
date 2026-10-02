@@ -4,6 +4,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from core.firebase import db
 from core.access_control import ensure_facility_access
+from config import settings
 from schemas.risk import (RiskAssessmentResponse,)
 from schemas.mother_risk import (MotherRiskAssessmentRequest,)
 from schemas.child_risk import (ChildRiskAssessmentRequest,)
@@ -37,6 +38,12 @@ def create_risk_assessment(
     assessed_by: str,
     current_user: dict,
 ) -> RiskAssessmentResponse:
+
+    if not settings.RISK_RULES_CLINICALLY_APPROVED:
+        raise HTTPException(
+            status_code=503,
+            detail="Risk decision support is disabled pending clinical approval.",
+        )
 
     patient_id = data.get("patient_id")
 

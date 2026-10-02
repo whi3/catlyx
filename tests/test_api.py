@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
@@ -11,6 +12,7 @@ from services import (
     referral_service,
     risk_service,
     role_service,
+    push_service,
 )
 from schemas.role import UserRole
 
@@ -71,10 +73,13 @@ class FakeCollection:
 class FakeQuery:
     def __init__(self, collection, field, value):
         self.collection = collection
-        self.field = field
-        self.value = value
+        self.filters = [(field, "==", value)]
         self.cursor_id = None
         self.limit_count = None
+
+    def where(self, field, operator, value):
+        self.filters.append((field, operator, value))
+        return self
 
     def start_after(self, snapshot):
         self.cursor_id = snapshot.id
@@ -84,7 +89,12 @@ class FakeQuery:
         matching = [
             FakeSnapshot(data, document_id)
             for document_id, data in self.collection.records.items()
-            if data.get(self.field) == self.value
+            if all(
+                data.get(field) == value
+                if operator == "=="
+                else data.get(field) is not None and data.get(field) <= value
+                for field, operator, value in self.filters
+            )
         ]
         if self.cursor_id:
             cursor_index = next(
@@ -120,6 +130,7 @@ def client(monkeypatch):
     monkeypatch.setattr(referral_service, "db", fake_db)
     monkeypatch.setattr(followup_service, "db", fake_db)
     monkeypatch.setattr(notification_service, "db", fake_db)
+    monkeypatch.setattr(push_service, "db", fake_db)
     monkeypatch.setattr(role_service, "db", fake_db)
     fake_db.collection("users").document("test-user").set({
         "role": UserRole.CHPS_WORKER.value,
@@ -255,6 +266,57 @@ def test_risk_assessment_rejects_empty_screening(client):
         json={"patient_id": patient_id},
     )
     assert response.status_code == 422
+
+
+def test_risk_assessment_is_disabled_without_clinical_approval(client, monkeypatch):
+    from config import settings
+
+    patient_service.db.collection("patients").document("approval-gate-patient").set({
+        "patient_id": "approval-gate-patient",
+        "patient_type": "mother",
+        "pregnancy_weeks": 24,
+        "facility_id": "clinic-1",
+    })
+    monkeypatch.setattr(settings, "RISK_RULES_CLINICALLY_APPROVED", False)
+    response = client.post(
+        "/api/v1/risk-assessment/",
+        json={"patient_id": "approval-gate-patient", "severe_bleeding": True},
+    )
+    assert response.status_code == 503
+
+
+def test_failed_sms_is_queued_for_retry(client, monkeypatch):
+    import config
+
+    async def fail_delivery(phone_number, message):
+        return False
+
+    monkeypatch.setattr(config.settings, "SMS_ENABLED", True)
+    monkeypatch.setattr(notification_service, "send_sms", fail_delivery)
+    result = asyncio.run(notification_service.dispatch_referral_sms(
+        patient_id="patient-1",
+        referral_id="referral-1",
+        phone_number="0240000000",
+        message="Referral created",
+    ))
+    records = notification_service.db.collection("notifications").records
+    item = next(iter(records.values()))
+    assert result == "pending"
+    assert item["attempt_count"] == 1
+    assert item["status"] == "pending"
+    assert item["next_attempt_at"] > datetime.now(timezone.utc).isoformat()
+    notification_service.db.collection("notifications").document(
+        item["notification_id"]
+    ).update({"next_attempt_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()})
+
+    async def succeed_delivery(phone_number, message):
+        return True
+
+    monkeypatch.setattr(notification_service, "send_sms", succeed_delivery)
+    retry_result = asyncio.run(notification_service.retry_due_notifications())
+    assert retry_result == {"processed": 1, "sent": 1, "failed": 0}
+    assert item["status"] == "sent"
+    assert item["attempt_count"] == 2
 
 
 def test_assessment_history_uses_a_cursor(client):

@@ -10,6 +10,7 @@ from utils.sms_messages import referral_created_message
 from services.patient_service import get_patient_phone_number
 from services.notification_service import dispatch_referral_sms
 from services.followup_service import record_legacy_referral_followup
+from services.push_service import notify_facility_supervisors_of_referral
 
 
 router = APIRouter(
@@ -43,6 +44,13 @@ async def create_new_referral(
         )
     else:
         result["notification_status"] = "not_available"
+
+    result["push_notifications_sent"] = await notify_facility_supervisors_of_referral(
+        facility_id=current_user["facility_id"],
+        patient_id=referral.patient_id,
+        referral_id=result["referral_id"],
+        destination=referral.destination,
+    )
     
     return result
 

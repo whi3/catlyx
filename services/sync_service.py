@@ -75,7 +75,7 @@ def apply_patient_change(patient_changes: list[dict]) -> tuple[list[dict], list[
 
 #----------------------------------------------------------------------------------------
 def sync_patients(last_synced_at: str, patient_changes: list[dict] | None = None):
-    sync_results, conflicts = apply_patient_changes(patient_changes or [])
+    sync_results, conflicts = apply_patient_change(patient_changes or [])
     patients = get_updated_patients(last_synced_at)
 
     return {
