@@ -8,15 +8,9 @@ router = APIRouter(
     tags=["Synchronization"],
 )
 
-@router.post("/patients", response_model=dict)
-async def synchronize_patients(
-    request: SyncRequest,
-    current_user: dict = Depends(get_current_user),
-):
-    try:
-        return sync_patients(request.last_synced_at)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=422,
-            detail="Invalid last_synced_at timestamp.",
-        ) from exc
+@router.post("/patients", response_model=SyncResponse)
+async def synchronize_patients(request: SyncRequest,):
+    return sync_patients(
+        request.last_synced_at,
+        request.patient_changes,
+    )
