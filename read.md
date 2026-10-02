@@ -20,3 +20,18 @@
 - **Feature 9**: Offline Queue Simulation
 - **Feature 11**: Conflict Resolution
 - **Feature 12**: Longitudinal Risk Trend Detection
+
+from ucimlrepo import fetch_ucirepo 
+  
+# fetch dataset 
+maternal_health_risk = fetch_ucirepo(id=863) 
+  
+# data (as pandas dataframes) 
+X = maternal_health_risk.data.features 
+y = maternal_health_risk.data.targets 
+  
+# metadata 
+print(maternal_health_risk.metadata) 
+  
+# variable information 
+print(maternal_health_risk.variables) 
