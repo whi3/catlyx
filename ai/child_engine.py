@@ -68,7 +68,17 @@ def assess_child_risk(
             "Elevated temperature reported"
         )
 
-    if score >= 6:
+    emergency_signs = (
+        data.convulsions
+        or data.lethargy
+        or data.difficulty_breathing
+    )
+
+    if emergency_signs:
+        level = "High Risk"
+        recommendation = "Seek urgent clinical assessment or referral now."
+
+    elif score >= 6:
 
         level = "High Risk"
 

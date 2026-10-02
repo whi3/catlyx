@@ -16,6 +16,23 @@ class FakeDocument:
     def to_dict(self):
         return self._data
 
+    @property
+    def exists(self):
+        return self._data is not None
+
+
+class FakeStoredDocument:
+    def __init__(self, collection, document_id):
+        self.collection = collection
+        self.document_id = document_id
+        self.id = document_id
+
+    def get(self):
+        return FakeDocument(self.collection.docs.get(self.document_id))
+
+    def update(self, data):
+        self.collection.docs[self.document_id].update(data)
+
 
 class FakeQuery:
     def __init__(self, docs):
@@ -31,6 +48,14 @@ class FakeCollection:
     
     def stream(self):
         return iter([FakeDocument(doc) for doc in self.docs.values()])
+
+    def document(self, document_id):
+        return FakeStoredDocument(self, document_id)
+
+    def add(self, data):
+        document_id = f"audit-{len(self.docs)}"
+        self.docs[document_id] = dict(data)
+        return document_id, FakeStoredDocument(self, document_id)
 
 
 class FakeDb:
@@ -48,6 +73,11 @@ def fake_db(monkeypatch):
     """Mock Firestore database."""
     fake = FakeDb()
     monkeypatch.setattr("services.dashboard_service.db", fake)
+    monkeypatch.setattr("services.role_service.db", fake)
+    fake.collection("users").docs["test_user"] = {
+        "role": "ADMIN",
+        "facility_id": "clinic-1",
+    }
     return fake
 
 
@@ -305,4 +335,4 @@ def test_dashboard_authentication_required(client):
     response = client.get("/api/v1/dashboard/")
     
     # Should fail with 401 or 403 when no auth provided
-    assert response.status_code in [401, 403]
+    assert response.status_code in [401, 403, 503]

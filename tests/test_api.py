@@ -1,14 +1,24 @@
 import pytest
+from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
 from core.auth import get_current_user
 from main import app
-from services import patient_service, referral_service, risk_service
+from services import (
+    followup_service,
+    notification_service,
+    patient_service,
+    referral_service,
+    risk_service,
+    role_service,
+)
+from schemas.role import UserRole
 
 
 class FakeSnapshot:
-    def __init__(self, data=None):
+    def __init__(self, data=None, document_id=None):
         self._data = data
+        self.id = document_id
 
     @property
     def exists(self):
@@ -22,9 +32,13 @@ class FakeDocument:
     def __init__(self, collection, document_id):
         self.collection = collection
         self.document_id = document_id
+        self.id = document_id
 
     def get(self):
-        return FakeSnapshot(self.collection.records.get(self.document_id))
+        return FakeSnapshot(
+            self.collection.records.get(self.document_id),
+            document_id=self.document_id,
+        )
 
     def set(self, data):
         self.collection.records[self.document_id] = dict(data)
@@ -36,12 +50,58 @@ class FakeDocument:
 class FakeCollection:
     def __init__(self):
         self.records = {}
+        self._next_id = 0
 
     def document(self, document_id):
         return FakeDocument(self, document_id)
 
     def stream(self):
         return [FakeSnapshot(data) for data in self.records.values()]
+
+    def where(self, field, operator, value):
+        return FakeQuery(self, field, value)
+
+    def add(self, data):
+        document_id = f"audit-{self._next_id}"
+        self._next_id += 1
+        self.records[document_id] = dict(data)
+        return document_id, FakeDocument(self, document_id)
+
+
+class FakeQuery:
+    def __init__(self, collection, field, value):
+        self.collection = collection
+        self.field = field
+        self.value = value
+        self.cursor_id = None
+        self.limit_count = None
+
+    def start_after(self, snapshot):
+        self.cursor_id = snapshot.id
+        return self
+
+    def stream(self):
+        matching = [
+            FakeSnapshot(data, document_id)
+            for document_id, data in self.collection.records.items()
+            if data.get(self.field) == self.value
+        ]
+        if self.cursor_id:
+            cursor_index = next(
+                (index for index, document in enumerate(matching) if document.id == self.cursor_id),
+                -1,
+            )
+            matching = matching[cursor_index + 1:]
+        if self.limit_count is not None:
+            matching = matching[:self.limit_count]
+        return matching
+
+    def order_by(self, *args, **kwargs):
+        return self
+
+    def limit(self, count):
+        self.limit_count = count
+        return self
 
 
 class FakeFirestore:
@@ -58,6 +118,13 @@ def client(monkeypatch):
     monkeypatch.setattr(patient_service, "db", fake_db)
     monkeypatch.setattr(risk_service, "db", fake_db)
     monkeypatch.setattr(referral_service, "db", fake_db)
+    monkeypatch.setattr(followup_service, "db", fake_db)
+    monkeypatch.setattr(notification_service, "db", fake_db)
+    monkeypatch.setattr(role_service, "db", fake_db)
+    fake_db.collection("users").document("test-user").set({
+        "role": UserRole.CHPS_WORKER.value,
+        "facility_id": "clinic-1",
+    })
     app.dependency_overrides[get_current_user] = lambda: {"uid": "test-user"}
 
     with TestClient(app) as test_client:
@@ -81,7 +148,7 @@ def test_protected_patient_endpoint_requires_authentication():
             json={"first_name": "Ama", "last_name": "Mensah"},
         )
 
-    assert response.status_code == 401
+    assert response.status_code in {401, 503}
 
 
 def test_register_and_retrieve_mother(client):
@@ -96,7 +163,7 @@ def test_register_and_retrieve_mother(client):
 
     create_response = client.post("/api/v1/patients/mothers", json=payload)
 
-    assert create_response.status_code == 200
+    assert create_response.status_code == 201
     patient_id = create_response.json()["patient_id"]
 
     get_response = client.get(f"/api/v1/patients/{patient_id}")
@@ -106,10 +173,35 @@ def test_register_and_retrieve_mother(client):
     assert get_response.json()["first_name"] == "Ama"
 
 
-def test_risk_assessment_records_moderate_risk_for_severe_bleeding(client):
+def test_registration_rejects_implausible_values(client):
+    response = client.post(
+        "/api/v1/patients/children",
+        json={
+            "first_name": "Kofi",
+            "last_name": "Mensah",
+            "age_months": 90,
+            "guardian_name": "Ama Mensah",
+            "community": "Kumasi",
+            "weight": 12,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_patient_records_are_facility_scoped(client):
+    patient_service.db.collection("patients").document("other-clinic-patient").set({
+        "patient_id": "other-clinic-patient",
+        "patient_type": "mother",
+        "facility_id": "clinic-2",
+    })
+    response = client.get("/api/v1/patients/other-clinic-patient")
+    assert response.status_code == 404
+
+
+def test_risk_assessment_escalates_severe_bleeding(client):
     patient_id = "mother-1"
     patient_service.db.collection("patients").document(patient_id).set(
-        {"patient_id": patient_id, "patient_type": "mother"}
+        {"patient_id": patient_id, "patient_type": "mother", "facility_id": "clinic-1"}
     )
 
     response = client.post(
@@ -125,15 +217,82 @@ def test_risk_assessment_records_moderate_risk_for_severe_bleeding(client):
     )
 
     assert response.status_code == 200
-    assert response.json()["risk_level"] == "Moderate Risk"
+    assert response.json()["risk_level"] == "High Risk"
     assert response.json()["risk_score"] == 4
     assert response.json()["assessed_by"] == "test-user"
+    assert response.json()["recommendation"] == "Seek urgent clinical assessment or referral now."
+    assert response.json()["clinical_validation_status"] == "pending"
+    assert response.json()["decision_support_only"] is True
+
+
+def test_child_convulsions_escalate_to_urgent_review(client):
+    patient_id = "child-1"
+    patient_service.db.collection("patients").document(patient_id).set({
+        "patient_id": patient_id,
+        "patient_type": "child",
+        "age_months": 12,
+        "facility_id": "clinic-1",
+    })
+    response = client.post(
+        "/api/v1/risk-assessment/",
+        json={"patient_id": patient_id, "convulsions": True},
+    )
+    assert response.status_code == 200
+    assert response.json()["risk_level"] == "High Risk"
+    assert response.json()["recommendation"] == "Seek urgent clinical assessment or referral now."
+
+
+def test_risk_assessment_rejects_empty_screening(client):
+    patient_id = "empty-screening-mother"
+    patient_service.db.collection("patients").document(patient_id).set({
+        "patient_id": patient_id,
+        "patient_type": "mother",
+        "pregnancy_weeks": 24,
+        "facility_id": "clinic-1",
+    })
+    response = client.post(
+        "/api/v1/risk-assessment/",
+        json={"patient_id": patient_id},
+    )
+    assert response.status_code == 422
+
+
+def test_assessment_history_uses_a_cursor(client):
+    patient_id = "history-patient"
+    patient_service.db.collection("patients").document(patient_id).set({
+        "patient_id": patient_id,
+        "patient_type": "mother",
+        "facility_id": "clinic-1",
+    })
+    assessments = patient_service.db.collection("risk_assessments")
+    for index, assessed_at in enumerate((
+        "2026-10-03T03:00:00+00:00",
+        "2026-10-03T02:00:00+00:00",
+        "2026-10-03T01:00:00+00:00",
+    )):
+        assessments.document(f"assessment-{index}").set({
+            "assessment_id": f"assessment-{index}",
+            "patient_id": patient_id,
+            "assessed_at": assessed_at,
+            "risk_level": "High Risk",
+        })
+
+    first_page = client.get(f"/api/v1/patients/{patient_id}/assessments?limit=2")
+    assert first_page.status_code == 200
+    assert len(first_page.json()) == 2
+    cursor = first_page.headers["X-Next-Cursor"]
+
+    second_page = client.get(
+        f"/api/v1/patients/{patient_id}/assessments?limit=2&cursor={cursor}"
+    )
+    assert second_page.status_code == 200
+    assert len(second_page.json()) == 1
 
 
 def test_referral_status_and_follow_up_workflow(client):
     patient_id = "patient-1"
     patient_service.db.collection("patients").document(patient_id).set(
-        {"patient_id": patient_id, "patient_type": "child"}
+        {"patient_id": patient_id, "patient_type": "child", "facility_id": "clinic-1"}
     )
 
     response = client.post(
@@ -145,20 +304,32 @@ def test_referral_status_and_follow_up_workflow(client):
         },
     )
 
-    assert response.status_code == 200
+    assert response.status_code == 201
     referral_id = response.json()["referral_id"]
     assert response.json()["status"] == "pending"
 
+    scheduled_date = (datetime.now(timezone.utc) + timedelta(days=1)).isoformat()
+    follow_up_response = client.post(
+        "/api/v1/followups/",
+        json={
+            "referral_id": referral_id,
+            "patient_id": patient_id,
+            "scheduled_date": scheduled_date,
+            "notes": "Review by nurse",
+        },
+    )
+    followup_id = follow_up_response.json()["followup_id"]
+    closeout_response = client.put(
+        f"/api/v1/followups/{followup_id}",
+        json={"status": "completed", "outcome": "Reviewed by nurse"},
+    )
     status_response = client.put(
         f"/api/v1/referrals/{referral_id}/status",
         json={"status": "completed"},
     )
-    follow_up_response = client.post(
-        f"/api/v1/referrals/{referral_id}/follow-up",
-        json={"notes": "Reviewed by nurse", "completed": True},
-    )
 
     assert status_response.status_code == 200
     assert status_response.json()["status"] == "completed"
-    assert follow_up_response.status_code == 200
-    assert follow_up_response.json()["follow_up_completed"] is True
+    assert follow_up_response.status_code == 201
+    assert closeout_response.status_code == 200
+    assert closeout_response.json()["status"] == "completed"

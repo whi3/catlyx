@@ -1,24 +1,26 @@
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ReferralCreate(BaseModel):
-    patient_id: str
-    reason: str
-    destination: str
-    urgency: str = "routine"
-    notes: Optional[str] = None
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    patient_id: str = Field(min_length=1, max_length=128)
+    reason: str = Field(min_length=3, max_length=1000)
+    destination: str = Field(min_length=2, max_length=200)
+    urgency: Literal["routine", "urgent", "emergency"] = "routine"
+    notes: Optional[str] = Field(default=None, max_length=2000)
 
 class ReferralStatusUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: Literal["completed", "cancelled"]
 
-    status: str
 
-
-class FollowUpCreate(BaseModel):
-
-    notes: Optional[str] = None
-
+class ReferralFollowUpCreate(BaseModel):
+    """Compatibility input for clients migrating to the follow-ups API."""
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    notes: Optional[str] = Field(default=None, max_length=2000)
     completed: bool = False
 
 
@@ -40,10 +42,4 @@ class ReferralResponse(BaseModel):
 
     created_at: str
 
-    follow_up_required: bool = False
-
-    follow_up_completed: bool = False
-
-    follow_up_notes: Optional[str] = None
-
-    follow_up_date: Optional[str] = None
+    facility_id: Optional[str] = None

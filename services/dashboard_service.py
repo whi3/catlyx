@@ -1,4 +1,5 @@
 from datetime import datetime,timedelta,timezone
+from fastapi import HTTPException
 from core.firebase import db
 from schemas.dashboard import (
     DashboardMetrics,PatientMetrics,RiskDistribution,ReferralMetrics,
@@ -8,6 +9,12 @@ from schemas.dashboard import (
 
 class DashboardService:
     """Metrics calculation and aggregation"""
+
+    @staticmethod
+    def _get_db():
+        if db is None:
+            raise HTTPException(status_code=503, detail="Database service is not configured.")
+        return db
 
     @staticmethod
     def _parse_datetime(value: str) -> datetime:
@@ -20,7 +27,7 @@ class DashboardService:
     @staticmethod
     def get_patient_metrics():
         """Calculating patient registration metrics"""
-        patients = db.collection("patients").stream()
+        patients = DashboardService._get_db().collection("patients").stream()
 
         total_mothers = 0
         total_children = 0
@@ -61,7 +68,7 @@ class DashboardService:
 
     @staticmethod
     def get_risk_distribution():
-        assessments = db.collection("risk_assessments").stream()
+        assessments = DashboardService._get_db().collection("risk_assessments").stream()
 
         low_count = 0
         moderate_count = 0
@@ -86,7 +93,7 @@ class DashboardService:
 
     @staticmethod
     def get_referral_metrics():
-        referrals = db.collection("referrals").stream()
+        referrals = DashboardService._get_db().collection("referrals").stream()
 
         total = 0
         pending = 0
@@ -131,7 +138,7 @@ class DashboardService:
 
     @staticmethod
     def get_followup_metrics():
-        followups = db.collection("followups").stream()
+        followups = DashboardService._get_db().collection("followups").stream()
 
         total = 0
         pending = 0
@@ -229,7 +236,7 @@ class DashboardService:
             day_end = day_start + timedelta(days=1)
 
             high_risk_count = 0
-            assessments = list(db.collection("risk_assessments").stream())
+            assessments = list(DashboardService._get_db().collection("risk_assessments").stream())
             for doc in assessments:
                 data = doc.to_dict()
                 created_str = data.get("assessed_at") or data.get("created_at")
@@ -245,7 +252,7 @@ class DashboardService:
                         pass
 
             new_referrals = 0
-            referrals = list(db.collection("referrals").stream())
+            referrals = list(DashboardService._get_db().collection("referrals").stream())
             for doc in referrals:
                 data = doc.to_dict()
                 created_str = data.get("created_at")
@@ -270,7 +277,7 @@ class DashboardService:
                         pass
 
             overdue_followups = 0
-            followups = db.collection("followups").stream()
+            followups = DashboardService._get_db().collection("followups").stream()
             for doc in followups:
                 data = doc.to_dict()
                 status =  data.get("status", "").lower()

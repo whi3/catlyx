@@ -1,6 +1,9 @@
+import logging
 import httpx
+from urllib.parse import urlparse
 
 from config import settings
+logger = logging.getLogger(__name__)
 
 
 async def send_sms(
@@ -12,19 +15,13 @@ async def send_sms(
         return False
 
     if not settings.SMS_ENABLED:
-        print(
-            f"[SMS DISABLED] "
-            f"{phone_number}: {message}"
-        )
-
         return False
 
-    if not settings.SMS_PROVIDER_URL:
-        print(
-            "[SMS ERROR] "
-            "SMS provider URL is not configured."
-        )
-
+    if not settings.SMS_PROVIDER_URL or not settings.SMS_API_KEY or not settings.SMS_SENDER_ID:
+        logger.error("SMS is enabled but provider configuration is incomplete.")
+        return False
+    if urlparse(settings.SMS_PROVIDER_URL).scheme != "https":
+        logger.error("SMS provider URL must use HTTPS.")
         return False
 
     try:
@@ -56,17 +53,10 @@ async def send_sms(
 
             return True
 
-        print(
-            "[SMS ERROR] "
-            f"Provider returned {response.status_code}"
-        )
+        logger.warning("SMS provider returned HTTP %s.", response.status_code)
 
         return False
 
-    except httpx.HTTPError as error:
-
-        print(
-            f"[SMS ERROR] {error}"
-        )
-
+    except httpx.HTTPError:
+        logger.exception("SMS provider request failed.")
         return False

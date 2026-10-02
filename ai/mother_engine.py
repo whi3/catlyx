@@ -17,6 +17,10 @@ def assess_mother_risk(
             "Severe bleeding reported"
         )
 
+    if data.convulsions:
+        score += 5
+        reasons.append("Convulsions reported")
+
     if data.severe_headache:
         score += 2
         reasons.append(
@@ -65,7 +69,20 @@ def assess_mother_risk(
             "Missed ANC visit reported"
         )
 
-    if score >= 6:
+    emergency_signs = (
+        data.severe_bleeding
+        or data.convulsions
+        or (data.severe_headache and data.blurred_vision)
+        or data.severe_abdominal_pain
+        or data.difficulty_breathing
+        or data.reduced_fetal_movement
+    )
+
+    if emergency_signs:
+        level = "High Risk"
+        recommendation = "Seek urgent clinical assessment or referral now."
+
+    elif score >= 6:
 
         level = "High Risk"
 

@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     FIREBASE_CREDENTIALS: str = ""
+    FIREBASE_PROJECT_ID: str = ""
 
     SMS_ENABLED: bool = False
     SMS_PROVIDER_URL: str = ""

@@ -71,7 +71,7 @@ class FakeCollection:
         return FakeDocument(self, document_id)
 
     def where(self, field, op, value):
-        return self
+        return FakeQuery(self, field, value)
 
     def order_by(self, field, **kwargs):
         return self
@@ -99,6 +99,26 @@ class FakeFirestore:
         return self.collections.setdefault(name, FakeCollection())
 
 
+class FakeQuery:
+    def __init__(self, collection, field, value):
+        self.collection = collection
+        self.field = field
+        self.value = value
+
+    def order_by(self, field, **kwargs):
+        return self
+
+    def limit(self, count):
+        return self
+
+    def stream(self):
+        return [
+            document
+            for document in self.collection.stream()
+            if document.to_dict().get(self.field) == self.value
+        ]
+
+
 @pytest.fixture
 def client(monkeypatch):
     fake_db = FakeFirestore()
@@ -113,6 +133,7 @@ def client(monkeypatch):
     role_service.db.collection("users").document("worker-user").set({
         "uid": "worker-user",
         "role": UserRole.CHPS_WORKER.value,
+        "facility_id": "clinic-1",
     })
 
     app.dependency_overrides.clear()
@@ -131,6 +152,7 @@ def test_admin_can_assign_roles(client, monkeypatch):
         json={
             "user_id": "worker-user",
             "role": UserRole.SUPERVISOR.value,
+            "facility_id": "clinic-1",
         },
     )
 
@@ -145,6 +167,7 @@ def test_worker_cannot_assign_roles(client, monkeypatch):
         json={
             "user_id": "another-user",
             "role": UserRole.SUPERVISOR.value,
+            "facility_id": "clinic-1",
         },
     )
 
@@ -159,6 +182,21 @@ def test_protected_patient_endpoint(client):
     assert response.status_code == 200
 
 
+def test_unprovisioned_user_is_denied(client):
+    app.dependency_overrides[get_current_user] = lambda: {"uid": "unknown-user"}
+    response = client.get("/api/v1/patients/")
+    assert response.status_code == 403
+
+
+def test_staff_without_facility_is_denied(client):
+    role_service.db.collection("users").document("unassigned-user").set({
+        "role": UserRole.CHPS_WORKER.value,
+    })
+    app.dependency_overrides[get_current_user] = lambda: {"uid": "unassigned-user"}
+    response = client.get("/api/v1/patients/")
+    assert response.status_code == 403
+
+
 def test_audit_logging(client, monkeypatch):
     app.dependency_overrides[get_current_user] = lambda: {"uid": "admin-user"}
 
@@ -170,6 +208,6 @@ def test_audit_logging(client, monkeypatch):
         details={"assigned_role": "SUPERVISOR"},
     )
 
-    logs = role_service.get_audit_logs(user_id="admin-user")
+    logs = role_service.get_audit_logs(user_id="admin-user", is_admin=True)
 
     assert len(logs) >= 1
