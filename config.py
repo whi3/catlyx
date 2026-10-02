@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # approval from the local clinical governance team.
     RISK_RULES_CLINICALLY_APPROVED: bool = False
     NOTIFICATION_MAX_ATTEMPTS: int = 5
+    MATERNAL_ML_SHADOW_ENABLED: bool = False
 
     model_config = SettingsConfigDict(env_file=".env")
         

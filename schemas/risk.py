@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -25,6 +25,19 @@ class RiskAssessmentRequest(BaseModel):
     systolic_bp: Optional[int] = Field(default=None, ge=50, le=300)
     diastolic_bp: Optional[int] = Field(default=None, ge=30, le=200)
     weight: Optional[float] = Field(default=None, gt=0, le=300)
+    blood_sugar_mmol_l: Optional[float] = Field(
+        default=None, ge=0, le=50, description="Blood sugar in mmol/L for maternal ML shadow evaluation."
+    )
+    body_temp_f: Optional[float] = Field(
+        default=None, ge=80, le=115, description="Body temperature in degrees Fahrenheit for maternal ML shadow evaluation."
+    )
+    heart_rate_bpm: Optional[int] = Field(
+        default=None, ge=20, le=250, description="Heart rate in beats per minute for maternal ML shadow evaluation."
+    )
+    worker_risk_label: Optional[Literal["Low Risk", "Mid Risk", "Moderate Risk", "High Risk"]] = Field(
+        default=None,
+        description="Worker's independent risk label, entered before the model prediction is shown.",
+    )
     severe_bleeding: bool = False
     severe_headache: bool = False
     swelling: bool = False
@@ -65,6 +78,15 @@ class RiskAssessmentResponse(BaseModel):
     assessed_by: Optional[str] = None
     assessed_at: Optional[str] = None
     observations: dict = Field(default_factory=dict)
+    worker_risk_label: Optional[str] = None
+    worker_label_recorded_at: Optional[str] = None
+    experimental_model_prediction: Optional[dict] = Field(
+        default=None,
+        description=(
+            "Experimental ML output for evaluation only. The rule-based risk level and "
+            "recommendation remain separate and are not replaced by this prediction."
+        ),
+    )
     engine_version: str = "rules-v1"
     clinical_validation_status: str = "pending"
     decision_support_only: bool = True

@@ -1,4 +1,5 @@
 import uuid
+import logging
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from pydantic import ValidationError
@@ -13,6 +14,7 @@ from ai.child_engine import (assess_child_risk,)
 
 
 COLLECTION = "risk_assessments"
+logger = logging.getLogger(__name__)
 
 
 def get_patient(patient_id: str, current_user: dict | None = None):
@@ -44,6 +46,12 @@ def create_risk_assessment(
             status_code=503,
             detail="Risk decision support is disabled pending clinical approval.",
         )
+
+    worker_label_recorded_at = (
+        datetime.now(timezone.utc).isoformat()
+        if data.get("worker_risk_label")
+        else None
+    )
 
     patient_id = data.get("patient_id")
 
@@ -165,6 +173,42 @@ def create_risk_assessment(
         timezone.utc
     ).isoformat()
 
+    worker_label = data.get("worker_risk_label")
+    ml_shadow_prediction = None
+    if (
+        patient_type == "mother"
+        and worker_label
+        and settings.MATERNAL_ML_SHADOW_ENABLED
+    ):
+        measurements = {
+            "Age": data.get("age", patient.get("age")),
+            "SystolicBP": data.get("systolic_bp"),
+            "DiastolicBP": data.get("diastolic_bp"),
+            "BS": data.get("blood_sugar_mmol_l"),
+            "BodyTemp": data.get("body_temp_f"),
+            "HeartRate": data.get("heart_rate_bpm"),
+        }
+        if all(value is not None for value in measurements.values()):
+            try:
+                from ml.predict_maternal import predict_maternal
+
+                ml_shadow_prediction = predict_maternal(measurements)
+                worker_label_normalized = (
+                    "Mid Risk" if worker_label == "Moderate Risk" else worker_label
+                )
+                model_label_normalized = (
+                    "Mid Risk"
+                    if ml_shadow_prediction["risk_label"] == "Moderate Risk"
+                    else ml_shadow_prediction["risk_label"]
+                )
+                ml_shadow_prediction["worker_label_agreement"] = (
+                    worker_label_normalized == model_label_normalized
+                )
+            except Exception:
+                # A missing or invalid local model must not alter the rule-based
+                # assessment or leak measurements into logs.
+                logger.exception("Maternal ML shadow prediction was unavailable.")
+
     assessment_record = {
         "assessment_id": assessment_id,
         "patient_id": patient_id,
@@ -177,6 +221,10 @@ def create_risk_assessment(
         "assessed_at": assessed_at,
         "facility_id": patient.get("facility_id"),
         "observations": data,
+        "worker_risk_label": worker_label,
+        "worker_label_recorded_at": worker_label_recorded_at,
+        "worker_label_source": "field_worker_pre_model" if worker_label else None,
+        "experimental_model_prediction": ml_shadow_prediction,
         "engine_version": "rules-v1",
         "clinical_validation_status": "pending",
         "decision_support_only": True,

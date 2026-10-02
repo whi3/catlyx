@@ -1,5 +1,7 @@
 import pytest
 import asyncio
+import sys
+import types
 from datetime import datetime, timedelta, timezone
 from fastapi.testclient import TestClient
 
@@ -224,6 +226,10 @@ def test_risk_assessment_escalates_severe_bleeding(client):
             "temperature": 37,
             "weight": 65,
             "severe_bleeding": True,
+            "worker_risk_label": "High Risk",
+            "blood_sugar_mmol_l": 7.1,
+            "body_temp_f": 98.6,
+            "heart_rate_bpm": 82,
         },
     )
 
@@ -234,6 +240,9 @@ def test_risk_assessment_escalates_severe_bleeding(client):
     assert response.json()["recommendation"] == "Seek urgent clinical assessment or referral now."
     assert response.json()["clinical_validation_status"] == "pending"
     assert response.json()["decision_support_only"] is True
+    stored_assessment = next(iter(risk_service.db.collection("risk_assessments").records.values()))
+    assert stored_assessment["worker_risk_label"] == "High Risk"
+    assert stored_assessment["worker_label_source"] == "field_worker_pre_model"
 
 
 def test_child_convulsions_escalate_to_urgent_review(client):
@@ -317,6 +326,48 @@ def test_failed_sms_is_queued_for_retry(client, monkeypatch):
     assert retry_result == {"processed": 1, "sent": 1, "failed": 0}
     assert item["status"] == "sent"
     assert item["attempt_count"] == 2
+
+
+def test_model_prediction_is_returned_separately_from_rule_result(client, monkeypatch):
+    import config
+
+    patient_id = "model-shadow-mother"
+    patient_service.db.collection("patients").document(patient_id).set({
+        "patient_id": patient_id,
+        "patient_type": "mother",
+        "age": 27,
+        "pregnancy_weeks": 24,
+        "facility_id": "clinic-1",
+    })
+    fake_predictor = types.ModuleType("ml.predict_maternal")
+    fake_predictor.predict_maternal = lambda measurements: {
+        "model_version": "test-model-v1",
+        "risk_label": "Mid Risk",
+        "probabilities": {"low risk": 0.2, "mid risk": 0.7, "high risk": 0.1},
+        "decision_support_only": True,
+        "clinical_validation_status": "not_clinically_validated",
+    }
+    monkeypatch.setitem(sys.modules, "ml.predict_maternal", fake_predictor)
+    monkeypatch.setattr(config.settings, "MATERNAL_ML_SHADOW_ENABLED", True)
+    response = client.post(
+        "/api/v1/risk-assessment/",
+        json={
+            "patient_id": patient_id,
+            "age": 27,
+            "systolic_bp": 120,
+            "diastolic_bp": 80,
+            "blood_sugar_mmol_l": 7.1,
+            "body_temp_f": 98.6,
+            "heart_rate_bpm": 82,
+            "worker_risk_label": "High Risk",
+            "severe_bleeding": True,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["risk_level"] == "High Risk"
+    assert response.json()["experimental_model_prediction"]["risk_label"] == "Mid Risk"
+    assert response.json()["experimental_model_prediction"]["worker_label_agreement"] is False
 
 
 def test_assessment_history_uses_a_cursor(client):

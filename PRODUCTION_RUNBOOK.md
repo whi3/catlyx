@@ -5,6 +5,12 @@
 
 Risk assessment endpoints return `503` until `RISK_RULES_CLINICALLY_APPROVED=true` is set. The current thresholds and escalation behavior require written approval from the Ghana clinical governance team, with an approver, date, reviewed rule version, and review evidence recorded before enabling this setting. This repository does not grant that clinical approval.
 
+## Maternal ML baseline
+
+Install the optional training dependencies with `pip install -r requirements-ml.txt`, then run `python -m ml.train_maternal`. The first run downloads UCI dataset 863 into the ignored `data/raw/` cache, trains a random-forest baseline, evaluates it using five-fold stratified group splits by exact measurement profile, and writes a model artifact plus JSON metrics under ignored `artifacts/`. Review per-class recall, macro F1, balanced accuracy, duplicate-profile counts, and contradictory-label counts; do not use ordinary accuracy alone.
+
+The prediction adapter accepts only the six UCI features with explicit units. API experimental predictions require complete maternal measurements, a worker-entered label on the assessment request, `MATERNAL_ML_SHADOW_ENABLED=true`, and the clinical risk gate above. The API returns the experimental prediction and worker-label agreement separately; the existing rule-based risk level and recommendation remain primary. The experimental output is not clinically validated. The artifact is trained on the UCI snapshot unless reviewed worker labels are supplied as a de-identified CSV with headers `Age,SystolicBP,DiastolicBP,BS,BodyTemp,HeartRate,RiskLevel` using `--worker-labels PATH`. Keep a copy of the source, approval, and evaluation report for each model version.
+
 
 ## Existing Firestore records
 
